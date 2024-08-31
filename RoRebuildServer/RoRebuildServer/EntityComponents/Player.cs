@@ -87,7 +87,6 @@ public class Player : IEntityAutoReset
     public int GetData(PlayerStat type) => CharData[(int)type];
     public void SetData(PlayerStat type, int val) => CharData[(int)type] = val;
     public int GetStat(CharacterStat type) => CombatEntity.GetStat(type);
-    public int GetEffectiveStat(CharacterStat type) => CombatEntity.GetEffectiveStat(type);
     public float GetTiming(TimingStat type) => CombatEntity.GetTiming(type);
     public void SetStat(CharacterStat type, int val) => CombatEntity.SetStat(type, val);
     public void SetStat(CharacterStat type, float val) => CombatEntity.SetStat(type, (int)val);
@@ -96,11 +95,11 @@ public class Player : IEntityAutoReset
     //this will get removed when we have proper job levels
     private static readonly int[] statsByLevel = new[]
     {
-        0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-        21, 22, 23, 24, 25, 26, 27, 28, 29, 29, 30, 31, 31, 32, 32, 33, 33, 34, 34,35,
-        35, 36, 36, 37, 37, 38, 38, 39, 39, 40, 40, 41, 41, 42, 42, 43, 43, 44, 44, 45, 
-        45, 46, 46, 47, 47, 48, 48, 49, 49, 50, 50, 51, 51, 52, 52, 53, 53, 54, 54, 55,
-        55, 56, 56, 57, 57, 58, 58, 59, 59, 60, 60, 61, 61, 62, 62, 63, 63, 64, 64, 64
+        0, 1, 2, 3, 4, 5, 6, 7, 9, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 29, 30, 31, 31, 32, 32, 33, 33, 34, 34,
+        35, 35, 36, 36, 37, 37, 38, 38, 39, 39, 40, 40, 41, 41, 42, 42, 43, 43, 44, 44,
+        45, 45, 46, 46, 47, 47, 48, 48, 49, 49, 50, 50, 51, 51, 52, 52, 53, 53, 54, 54,
+        55, 55, 56, 56, 57, 57, 58, 58, 59, 59, 60, 60, 61, 61, 62, 62, 63, 63, 64, 64,
     };
 
     public void Reset()
@@ -247,7 +246,37 @@ public class Player : IEntityAutoReset
         {
             Character.ClassId = job; //there should be more complex checks here to prevent GM and mounts from being lost but we'll deal with it later
         }
+
+        var jobAspd = GetJobBonus(CharacterStat.AspdBonus);
+        var aspdBonus = 100f / (GetStat(CharacterStat.AspdBonus) + 100 * jobAspd);
         
+        var recharge = (1.2f - level * 0.007f) * aspdBonus;
+        if(job == 2)
+            recharge = (1.4f - level * 0.009f) * aspdBonus;
+
+        if (recharge > 1.2f)
+            recharge = 1.4f;
+
+        var motionTime = 1f;
+        var spriteTime = 0.6f;
+        if (job == 2)
+        {
+            motionTime = recharge * (6f / 8f);
+            spriteTime = recharge * (6f / 8f);
+        }
+
+        if (recharge < motionTime)
+        {
+            var ratio = recharge / motionTime;
+            motionTime *= ratio;
+            spriteTime *= ratio;
+        }
+
+        SetTiming(TimingStat.AttackDelayTime, recharge);
+        SetTiming(TimingStat.AttackMotionTime, motionTime);
+        SetTiming(TimingStat.SpriteAttackTiming, spriteTime);
+
+
         //var aMotionTime = 0.5f;
         //var delayTime = 1.1f - level * 0.004f * aspdBonus;
         //if (delayTime < aMotionTime)
@@ -298,41 +327,9 @@ public class Player : IEntityAutoReset
         SetStat(CharacterStat.Str, (3 + level * 0.5f));
         SetStat(CharacterStat.Agi, (3 + level * 0.5f) * agiBonus);
         SetStat(CharacterStat.Dex, (15 + level * 0.9f) * dexBonus);
-        SetStat(CharacterStat.Luk, (3 + level * 0.5f));
         //SetStat(CharacterStat.MaxHp, 50 + 100 * level * hpBonus);
 
         //var newMaxHp = (level * level * level) / 20 + 80 * level;
-
-
-        var jobAspd = GetJobBonus(CharacterStat.AspdBonus);
-        var aspdBonus = 100f / (GetStat(CharacterStat.AspdBonus) + 100 * jobAspd);
-        var agiAspdBonus = 100f / (100 + GetEffectiveStat(CharacterStat.Agi));
-
-        var recharge = 1.2f * aspdBonus * agiAspdBonus;
-        if (job == 2)
-            recharge = 1.4f * aspdBonus * agiAspdBonus;
-
-        if (recharge > 1.4f)
-            recharge = 1.4f;
-
-        var motionTime = 1f;
-        var spriteTime = 0.6f;
-        if (job == 2)
-        {
-            motionTime = recharge * (6f / 8f);
-            spriteTime = recharge * (6f / 8f);
-        }
-
-        if (recharge < motionTime)
-        {
-            var ratio = recharge / motionTime;
-            motionTime *= ratio;
-            spriteTime *= ratio;
-        }
-
-        SetTiming(TimingStat.AttackDelayTime, recharge);
-        SetTiming(TimingStat.AttackMotionTime, motionTime);
-        SetTiming(TimingStat.SpriteAttackTiming, spriteTime);
 
         var newMaxHp = (level * level) / 2 + (level * level * level) / 300 + 42 + 10 * level;
         var updatedMaxHp = newMaxHp * hpBonus;// (int)(newMaxHp * multiplier) + 70;
@@ -354,10 +351,7 @@ public class Player : IEntityAutoReset
         if(GetStat(CharacterStat.Sp) > sp)
             SetStat(CharacterStat.Sp, sp);
 
-        var moveBonus = 100f / (100f + GetStat(CharacterStat.MoveSpeedBonus));
-
-        //var moveSpeed = 0.15f - (0.001f * level / 5f);
-        var moveSpeed = 0.15f * moveBonus;
+        var moveSpeed = 0.15f - (0.001f * level / 5f);
         SetTiming(TimingStat.MoveSpeed, moveSpeed);
         Character.MoveSpeed = moveSpeed;
 
@@ -536,8 +530,6 @@ public class Player : IEntityAutoReset
         CombatEntity.IsCasting = false;
         CombatEntity.CastingSkill.Clear();
         CombatEntity.QueuedCastingSkill.Clear();
-        CombatEntity.StatusContainer.RemoveAll();
-        UpdateStats();
 
         Character.Map.AddVisiblePlayersAsPacketRecipients(Character);
         CommandBuilder.SendPlayerDeath(Character);
@@ -770,7 +762,7 @@ public class Player : IEntityAutoReset
         if (!World.Instance.TryGetWorldMapByName(mapName, out var map))
             return false;
 
-        AddActionDelay(CooldownActionType.Teleport);
+        AddActionDelay(2f); //block character input for 1+ seconds.
         Character.ResetState();
         Character.SetSpawnImmunity();
 
@@ -820,7 +812,7 @@ public class Player : IEntityAutoReset
 
     public bool InActionCooldown() => CurrentCooldown > 1f;
     public void AddActionDelay(CooldownActionType type) => CurrentCooldown += ActionDelay.CooldownTime(type);
-    public void AddActionDelay(float time) => CurrentCooldown += time;
+    public void AddActionDelay(float time) => CurrentCooldown += CurrentCooldown;
 
     private bool InCombatReadyState => (Character.State == CharacterState.Idle || Character.State == CharacterState.Moving)
         && !CombatEntity.IsCasting &&

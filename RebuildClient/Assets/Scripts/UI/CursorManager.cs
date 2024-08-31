@@ -65,14 +65,9 @@ namespace Assets.Scripts.UI
 
         private void CopySpriteIntoTexture(Texture2D target, Sprite source, Rect src, Rect dest)
         {
-            var w = (int)src.width;
-            var h = (int)src.height;
-            var x = (int)src.x;
-            var y = (int)src.y;
-
-            var pixels = source.texture.GetPixels(x, y, w, h);
-            target.SetPixels((int)dest.x, (int)dest.y, w, h, pixels);
-        }
+			Graphics.CopyTexture(source.texture, 0, 0, (int)src.x, (int)src.y, (int)src.width, (int)src.height,
+				target, 0, 0, (int)dest.x, (int)dest.y);
+		}
 
         private void Init()
         {

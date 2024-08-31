@@ -50,11 +50,12 @@ namespace Assets.Scripts.Network
 
         //private static NetClient client;
 
-        private float lastPing;
-        private bool isReady;
-        private bool isConnected;
+        private float lastPing = 0;
+        private bool isReady = false;
+        private bool isConnected = false;
+        private bool isAdminHidden = false;
 
-        // public Color FakeAmbient = Color.white;
+        public Color FakeAmbient = Color.white;
 
         public string CurrentMap = "";
 
@@ -133,8 +134,6 @@ namespace Assets.Scripts.Network
                 yield return 0;
             }
 
-
-            CameraFollower.PlayerState = PlayerState;
             ClientPacketHandler.Init(this, PlayerState);
 
 #if UNITY_EDITOR
@@ -261,7 +260,7 @@ namespace Assets.Scripts.Network
             return new Vector2Int(x, y);
         }
 
-        public void LoadMoveData2(ClientInboundMessage msg, ServerControllable ctrl)
+        private void LoadMoveData2(ClientInboundMessage msg, ServerControllable ctrl)
         {
             var startPos = new Vector2(msg.ReadFloat(), msg.ReadFloat());
             var moveSpeed = msg.ReadFloat();
@@ -294,6 +293,42 @@ namespace Assets.Scripts.Network
             //ctrl.SetHitDelay(lockTime);
         }
 
+        private void LoadMoveData(ClientInboundMessage msg, ServerControllable ctrl)
+        {
+            var moveSpeed = msg.ReadFloat();
+            var moveCooldown = msg.ReadFloat();
+            var totalSteps = (int)msg.ReadByte();
+            var curStep = (int)msg.ReadByte();
+
+            pathData.Clear();
+            if (totalSteps > 0) //should always be true but whatever
+            {
+                pathData.Add(ReadPosition(msg));
+                var i = 1;
+                while (i < totalSteps)
+                {
+                    var b = msg.ReadByte();
+                    pathData.Add(pathData[i - 1].AddDirection((Direction)(b >> 4)));
+                    i++;
+                    if (i < totalSteps)
+                    {
+                        pathData.Add(pathData[i - 1].AddDirection((Direction)(b & 0xF)));
+                        i++;
+                    }
+                }
+            }
+
+            var lockTime = msg.ReadFloat();
+            //for (var i = 0; i < totalSteps; i++)
+            //	pathData.Add(ReadPosition(msg));
+
+            //if(ctrl.Id == PlayerId)
+            //	Debug.Log("Doing move for player!");
+
+            ctrl.StartMove(moveSpeed, moveCooldown, totalSteps, curStep, pathData);
+            ctrl.SetHitDelay(lockTime);
+        }
+
         private ServerControllable SpawnEntity(ClientInboundMessage msg)
         {
             var id = msg.ReadInt32();
@@ -306,6 +341,7 @@ namespace Assets.Scripts.Network
             var lvl = -1;
             var maxHp = 0;
             var hp = 0;
+
 
             if (type == CharacterType.Player || type == CharacterType.Monster)
             {
@@ -320,6 +356,7 @@ namespace Assets.Scripts.Network
                 oldEntity.FadeOutAndVanish(0.1f);
                 EntityList.Remove(id);
             }
+
 
             ServerControllable controllable;
             if (type == CharacterType.Player)
@@ -362,7 +399,7 @@ namespace Assets.Scripts.Network
 
                     var max = CameraFollower.Instance.ExpForLevel(controllable.Level);
                     CameraFollower.UpdatePlayerExp(PlayerState.Exp, max);
-                    controllable.IsHidden = PlayerState.IsAdminHidden;
+                    controllable.IsHidden = isAdminHidden;
                     PlayerState.JobId = classId;
                     UiManager.Instance.SkillManager.UpdateAvailableSkills();
                 }
@@ -528,6 +565,80 @@ namespace Assets.Scripts.Network
             LoadMoveData2(msg, controllable);
         }
 
+        private void OnMessageFixedMove(ClientInboundMessage msg)
+        {
+            var id = msg.ReadInt32();
+
+            if (!EntityList.TryGetValue(id, out var controllable))
+            {
+                Debug.LogWarning("Trying to move entity " + id + ", but it does not exist in scene!");
+                return;
+            }
+
+            var dest = ReadPosition(msg);
+            var speed = msg.ReadFloat();
+            var time = msg.ReadFloat();
+
+            controllable.DirectWalkMove(speed, time, dest);
+        }
+
+        private void OnMessageRemoveEntity(ClientInboundMessage msg)
+        {
+            var id = msg.ReadInt32();
+            var reason = (CharacterRemovalReason)msg.ReadByte();
+
+            if (!EntityList.TryGetValue(id, out var controllable))
+            {
+                Debug.LogWarning("Trying to remove entity " + id + ", but it does not exist in scene!");
+                return;
+            }
+
+            if (id == PlayerId)
+            {
+                //Debug.Log("We're removing the player object! Hopefully the server knows what it's doing. We're just going to pretend we didn't see it.");
+                //return;
+
+                Debug.LogWarning("Whoa! Trying to delete player object. Is that right...?");
+                CameraFollower.Instance.Target = null;
+            }
+
+            EntityList.Remove(id);
+            
+            if (CameraFollower.SelectedTarget == controllable)
+                CameraFollower.ClearSelected();
+
+            if (reason == CharacterRemovalReason.Dead)
+            {
+                if (controllable.SpriteAnimator.Type != SpriteType.Player)
+                {
+                    controllable.MonsterDie();
+                    //               var vDir = -controllable.CounterHitDir;
+                    //Debug.Log(vDir);
+                    //var newDir = new Vector3(vDir.x, 0, vDir.z).normalized * 8f;
+                    //               newDir.y = 8f;
+                    //controllable.BlastOff(newDir * 5f);
+                }
+                else
+                    controllable.FadeOutAndVanish(0.1f);
+            }
+            else
+            {
+                controllable.FadeOutAndVanish(0.1f);
+            }
+            //GameObject.Destroy(controllable.gameObject);
+        }
+
+        private void OnMessageRemoveAllEntities(ClientInboundMessage msg)
+        {
+            foreach (var entity in EntityList)
+            {
+                GameObject.Destroy(entity.Value.gameObject);
+            }
+
+            EntityList.Clear();
+        }
+
+
         private void OnMessageStopImmediate(ClientInboundMessage msg)
         {
             var id = msg.ReadInt32();
@@ -558,6 +669,24 @@ namespace Assets.Scripts.Network
                 CameraFollower.ClearSelected();
 
             controllable.StopWalking();
+        }
+
+        private void OnMessageTakeDamage(ClientInboundMessage msg)
+        {
+            var id1 = msg.ReadInt32();
+
+            if (!EntityList.TryGetValue(id1, out var controllable))
+            {
+                Debug.LogWarning("Trying to have entity " + id1 + " take damage, but it does not exist in scene!");
+                return;
+            }
+
+            var dmg = msg.ReadInt32();
+            var hitCount = msg.ReadByte();
+            var damageTiming = msg.ReadFloat();
+            var lockTime = msg.ReadFloat();
+
+            StartCoroutine(DamageEvent(dmg, damageTiming, hitCount, 0, controllable));
         }
 
         public void AttackMotion(ServerControllable src, Vector2Int pos, Direction dir, float motionSpeed, [CanBeNull] ServerControllable target)
@@ -738,6 +867,24 @@ namespace Assets.Scripts.Network
             // }
         }
 
+        public void OnMessageChangeTarget(ClientInboundMessage msg)
+        {
+            var id = msg.ReadInt32();
+
+            //Debug.Log("Packet Change Target to target: " + id);
+
+            if (id == 0)
+            {
+                CameraFollower.ClearSelected();
+                return;
+            }
+
+            if (!EntityList.TryGetValue(id, out var controllable))
+                return;
+
+            CameraFollower.SetSelectedTarget(controllable, controllable.DisplayName, controllable.IsAlly, false);
+        }
+
         public void OnMessageGainExp(ClientInboundMessage msg)
         {
             var total = msg.ReadInt32();
@@ -808,6 +955,23 @@ namespace Assets.Scripts.Network
             }
         }
 
+        public void OnMessageResurrection(ClientInboundMessage msg)
+        {
+            var id = msg.ReadInt32();
+            var pos = ReadPosition(msg);
+
+            if (!EntityList.TryGetValue(id, out var controllable))
+            {
+                //Debug.LogWarning("Trying to do hit entity " + id1 + ", but it does not exist in scene!");
+                return;
+            }
+
+            CameraFollower.AttachEffectToEntity("LevelUp", controllable.gameObject, id);
+
+            controllable.SpriteAnimator.State = SpriteState.Idle;
+            controllable.SpriteAnimator.ChangeMotion(SpriteMotion.Idle, true);
+        }
+
         public void OnMessageDeath(ClientInboundMessage msg)
         {
             var id = msg.ReadInt32();
@@ -859,6 +1023,55 @@ namespace Assets.Scripts.Network
             controllable.SetHp(controllable.Hp, controllable.MaxHp);
         }
 
+        public void OnMessageMonsterTarget(ClientInboundMessage msg)
+        {
+            var id = msg.ReadInt32();
+
+            //Debug.Log("TARGET! " + id);
+
+            if (!EntityList.TryGetValue(id, out var controllable))
+                return;
+
+            var targetIcon = GameObject.Instantiate(TargetNoticePrefab);
+            targetIcon.transform.SetParent(controllable.transform);
+            targetIcon.transform.localPosition = Vector3.zero;
+        }
+
+        public void OnMessageSay(ClientInboundMessage msg)
+        {
+            var id = msg.ReadInt32();
+            var text = msg.ReadString();
+            var name = msg.ReadString();
+            var isShout = msg.ReadBoolean();
+
+            if (id == -1)
+            {
+                CameraFollower.AppendChatText("Server: " + text);
+                return;
+            }
+
+            if (EntityList.TryGetValue(id, out var controllable))
+            {
+                if (isShout)
+                {
+                    controllable.DialogBox($"{name}: <i><color=#FFB051>{text}</color></i>");
+                    CameraFollower.AppendChatText($"{name} shouts: <i><color=#FFB051>{text}</color></i>");
+                }
+                else
+                {
+                    controllable.DialogBox($"{name}: {text}");
+                    CameraFollower.AppendChatText($"{name}: {text}");
+                }
+            }
+            else
+            {
+                if (isShout)
+                    CameraFollower.AppendChatText($"{name} shouts: <i><color=#FFB051>{text}</color></i>");
+                else
+                    CameraFollower.AppendChatText($"{name} nearby: <i><color=#FFFF6A>{text}</color></i>");
+            }
+        }
+
         public void OnMessageChangeName(ClientInboundMessage msg)
         {
             var id = msg.ReadInt32();
@@ -874,6 +1087,44 @@ namespace Assets.Scripts.Network
                 CameraFollower.Instance.CharacterName.text = $"Lv. {controllable.Level} {controllable.Name}";
         }
 
+        public void OnEmote(ClientInboundMessage msg)
+        {
+            var id = msg.ReadInt32();
+            var emote = msg.ReadInt32();
+
+            if (!EntityList.TryGetValue(id, out var controllable))
+                return;
+
+            ClientDataLoader.Instance.AttachEmote(controllable.gameObject, emote);
+        }
+
+        public void OnMessageRequestFailed(ClientInboundMessage msg)
+        {
+            var error = (ClientErrorType)msg.ReadByte();
+
+            switch (error)
+            {
+                case ClientErrorType.InvalidCoordinates:
+                    CameraFollower.Instance.AppendChatText("<color=#FF3030>Error</color>: Coordinates were invalid.");
+                    break;
+                case ClientErrorType.TooManyRequests:
+                    CameraFollower.Instance.AppendChatText("<color=yellow>Warning</color>: Too many actions or requests.");
+                    break;
+                case ClientErrorType.UnknownMap:
+                    CameraFollower.Instance.AppendChatText("<color=#FF3030>Error</color>: Could not find map.");
+                    break;
+                case ClientErrorType.MalformedRequest:
+                    CameraFollower.Instance.AppendChatText("<color=#FF3030>Error</color>: Request could not be completed due to malformed data.");
+                    break;
+                case ClientErrorType.RequestTooLong:
+                    CameraFollower.Instance.AppendChatText("<color=#FF3030>Error</color>: Your text was too long.");
+                    break;
+                case ClientErrorType.InvalidInput:
+                    CameraFollower.Instance.AppendChatText("<color=#FF3030>Error</color>: Server request could not be performed as the input was not valid.");
+                    break;
+            }
+        }
+
         public void OnMessageEffectOnCharacter(ClientInboundMessage msg)
         {
             var id = msg.ReadInt32();
@@ -884,6 +1135,17 @@ namespace Assets.Scripts.Network
                 return;
 
             CameraFollower.AttachEffectToEntity(effect, controllable.gameObject, controllable.Id);
+        }
+
+
+        public void OnMessageEffectAtLocation(ClientInboundMessage msg)
+        {
+            var effect = msg.ReadInt32();
+            var pos = new Vector2Int(msg.ReadInt16(), msg.ReadInt16());
+            var facing = msg.ReadInt32();
+
+            var spawn = CameraFollower.WalkProvider.GetWorldPositionForTile(pos);
+            CameraFollower.CreateEffect(effect, spawn, facing);
         }
 
         public void OnMessageNpcInteraction(ClientInboundMessage msg)
@@ -939,6 +1201,19 @@ namespace Assets.Scripts.Network
                 default:
                     Debug.LogError($"Unknown Npc Interaction type: {type}");
                     break;
+            }
+        }
+
+        public void OnMessageAdminHideCharacter(ClientInboundMessage msg)
+        {
+            var isHidden = msg.ReadBoolean();
+            Debug.Log($"Packet for setting admin hide state: {isHidden}");
+
+            isAdminHidden = isHidden;
+
+            if (CameraFollower.TargetControllable)
+            {
+                CameraFollower.TargetControllable.IsHidden = isHidden;
             }
         }
 
@@ -1053,6 +1328,21 @@ namespace Assets.Scripts.Network
                 case PacketType.StartWalk:
                     OnMessageStartMove(msg);
                     break;
+                // case PacketType.FixedMove:
+                //     OnMessageFixedMove(msg);
+                //     break;
+                case PacketType.RemoveAllEntities:
+                    OnMessageRemoveAllEntities(msg);
+                    break;
+                case PacketType.RemoveEntity:
+                    OnMessageRemoveEntity(msg);
+                    break;
+                case PacketType.CreateEntity:
+                    OnMessageCreateEntity(msg);
+                    break;
+                case PacketType.LookTowards:
+                    OnMessageChangeFacing(msg);
+                    break;
                 case PacketType.SitStand:
                     OnMessageChangeSitStand(msg);
                     break;
@@ -1065,8 +1355,14 @@ namespace Assets.Scripts.Network
                 case PacketType.Move:
                     OnMessageMove(msg);
                     break;
+                case PacketType.TakeDamage:
+                    OnMessageTakeDamage(msg);
+                    break;
                 case PacketType.HitTarget:
                     OnMessageHit(msg);
+                    break;
+                case PacketType.ChangeTarget:
+                    OnMessageChangeTarget(msg);
                     break;
                 case PacketType.GainExp:
                     OnMessageGainExp(msg);
@@ -1074,11 +1370,23 @@ namespace Assets.Scripts.Network
                 case PacketType.LevelUp:
                     OnMessageLevelUp(msg);
                     break;
+                case PacketType.Resurrection:
+                    OnMessageResurrection(msg);
+                    break;
                 case PacketType.Death:
                     OnMessageDeath(msg);
                     break;
                 case PacketType.HpRecovery:
                     OnMessageHpRecovery(msg);
+                    break;
+                case PacketType.Targeted:
+                    OnMessageMonsterTarget(msg);
+                    break;
+                case PacketType.RequestFailed:
+                    OnMessageRequestFailed(msg);
+                    break;
+                case PacketType.Say:
+                    OnMessageSay(msg);
                     break;
                 case PacketType.ChangeName:
                     OnMessageChangeName(msg);
@@ -1086,8 +1394,17 @@ namespace Assets.Scripts.Network
                 case PacketType.EffectOnCharacter:
                     OnMessageEffectOnCharacter(msg);
                     break;
+                case PacketType.EffectAtLocation:
+                    OnMessageEffectAtLocation(msg);
+                    break;
                 case PacketType.NpcInteraction:
                     OnMessageNpcInteraction(msg);
+                    break;
+                case PacketType.Emote:
+                    OnEmote(msg);
+                    break;
+                case PacketType.AdminHideCharacter:
+                    OnMessageAdminHideCharacter(msg);
                     break;
                 case PacketType.StartCast:
                     OnMessageStartCasting(msg);
@@ -1289,13 +1606,12 @@ namespace Assets.Scripts.Network
             SendMessage(msg);
         }
 
-        public void SendClientTextCommand(ClientTextCommand cmd, string text = "")
+        public void SendClientTextCommand(ClientTextCommand cmd)
         {
             var msg = StartMessage();
 
             msg.Write((byte)PacketType.ClientTextCommand);
             msg.Write((byte)cmd);
-            msg.Write(text);
 
             SendMessage(msg);
         }
@@ -1495,7 +1811,7 @@ namespace Assets.Scripts.Network
 
         private void Update()
         {
-            
+            Shader.SetGlobalColor("_FakeAmbient", FakeAmbient);
 
             if (socket == null)
                 return;

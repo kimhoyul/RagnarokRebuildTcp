@@ -78,7 +78,7 @@ namespace Assets.Scripts.Effects
             if (damageContainer == null)
             {
                 damageContainer = new GameObject("DamageContainer");
-                indicatorSource = Resources.Load<GameObject>("DamageCritical");
+                indicatorSource = Resources.Load<GameObject>("DamageNormal");
             }
 
             if (!indicatorList.TryPop(out var i))

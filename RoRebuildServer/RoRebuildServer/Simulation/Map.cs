@@ -99,8 +99,7 @@ public class Map
 
         if (cOld != cNew)
         {
-            if (!cOld.RemoveEntity(ref entity, ch.Type))
-                throw new Exception($"For some reason the entity doesn't exist in the old chunk when moving chunks.");
+            cOld.RemoveEntity(ref entity, ch.Type);
             cNew.AddEntity(ref entity, ch.Type);
         }
 
@@ -337,38 +336,7 @@ public class Map
         entityCount++;
     }
 
-    public void AddEntityWithEvent(ref Entity entity, CreateEntityEventType eventType, Position pos, bool addToInstance = true)
-    {
-        var ch = entity.Get<WorldObject>();
-#if DEBUG
-        if (ch == null)
-            throw new Exception("Entity was added to map without Character object!");
-#endif
-
-        ch.Map = this;
-        if (ch.IsActive)
-            SendAddEntityAroundCharacterWithEvent(ref entity, ch, eventType, pos);
-
-        var c = GetChunkForPosition(ch.Position);
-        c.AddEntity(ref entity, ch.Type);
-
-
-        if (addToInstance)
-            Instance.Entities.Add(ref entity);
-
-        if (ch.Type == CharacterType.Player)
-        {
-            Debug.Assert(!Players.Contains(ref entity));
-            PlayerCount++;
-            Players.Add(ref entity);
-            ServerLogger.Debug($"Map {Name} changed player count to {PlayerCount}.");
-
-        }
-
-        entityCount++;
-    }
-
-    public void PrepareAddEntityAroundCharacter(ref Entity entity, WorldObject ch)
+    public void SendAddEntityAroundCharacter(ref Entity entity, WorldObject ch)
     {
         CommandBuilder.ClearRecipients();
         foreach (Chunk chunk in GetChunkEnumeratorAroundPosition(ch.Position, ServerConfig.MaxViewDistance))
@@ -387,26 +355,10 @@ public class Map
                 AddPlayerVisibility(targetCharacter, ch);
             }
         }
-    }
-
-    public void SendAddEntityAroundCharacter(ref Entity entity, WorldObject ch)
-    {
-        PrepareAddEntityAroundCharacter(ref entity, ch);
 
         if (CommandBuilder.HasRecipients())
         {
             CommandBuilder.SendCreateEntityMulti(ch);
-            CommandBuilder.ClearRecipients();
-        }
-    }
-
-    public void SendAddEntityAroundCharacterWithEvent(ref Entity entity, WorldObject ch, CreateEntityEventType eventType, Position pos)
-    {
-        PrepareAddEntityAroundCharacter(ref entity, ch);
-
-        if (CommandBuilder.HasRecipients())
-        {
-            CommandBuilder.SendCreateEntityWithEventMulti(ch, eventType, pos);
             CommandBuilder.ClearRecipients();
         }
     }

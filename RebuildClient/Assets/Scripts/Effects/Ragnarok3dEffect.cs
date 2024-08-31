@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using Assets.Scripts.Network;
-using Assets.Scripts.Sprites;
 using UnityEngine;
 using UnityEngine.Serialization;
 using Object = System.Object;
@@ -22,7 +21,6 @@ namespace Assets.Scripts.Effects
         public GameObject FollowTarget;
         public GameObject AimTarget;
         public Object EffectData;
-        private BillboardObject billboard;
 
         public bool DestroyOnTargetLost = false;
         public bool UpdateOnlyOnFrameChange = false;
@@ -93,9 +91,6 @@ namespace Assets.Scripts.Effects
             PositionOffset = Vector3.zero;
             EffectType = 0;
             
-            if (billboard != null)
-                billboard.Style = BillboardStyle.None;
-            
             for (var i = 0; i < Primitives.Count; i++)
             {
                 var p = Primitives[i];
@@ -111,17 +106,6 @@ namespace Assets.Scripts.Effects
 
             Primitives.Clear();
         }
-        
-        public void SetBillboardMode(BillboardStyle style)
-        {
-            if (billboard == null)
-                billboard = gameObject.AddComponent<BillboardObject>();
-            billboard.Style = style;
-        }
-
-        public void SetBillboardAxis(Vector3 axis) => billboard.Axis = axis;
-        public void SetBillboardSubRotation(Quaternion subRotation) => billboard.SubRotation = subRotation;
-
 
         public RagnarokPrimitive LaunchPrimitive(PrimitiveType type, Material mat, float duration = -1)
         {

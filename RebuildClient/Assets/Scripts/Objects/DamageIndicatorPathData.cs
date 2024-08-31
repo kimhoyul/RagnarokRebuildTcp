@@ -10,8 +10,6 @@ namespace Assets.Scripts.Objects
         public AnimationCurve Alpha;
         public bool FliesAwayFromTarget = true;
         public float HeightMultiplier = 6;
-        public float DistanceMultiplier = 4;
         public float TweenTime = 1f;
-        
     }
 }

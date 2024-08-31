@@ -4,7 +4,6 @@ using Assets.Scripts.Effects;
 using Assets.Scripts.MapEditor;
 using Assets.Scripts.Network;
 using Assets.Scripts.Objects;
-using Assets.Scripts.PlayerControl;
 using Assets.Scripts.Sprites;
 using Assets.Scripts.UI;
 using Assets.Scripts.UI.ConfigWindow;
@@ -151,8 +150,6 @@ namespace Assets.Scripts
 
         public int ExpForLevel(int lvl) => lvl < 1 || lvl >= 99 ? -1 : levelReqs[lvl - 1];
 
-        [NonSerialized] public PlayerState PlayerState;
-
         public static CameraFollower Instance
         {
             get
@@ -278,7 +275,7 @@ namespace Assets.Scripts
             LayoutRebuilder.ForceRebuildLayoutImmediate(UiCanvas.transform as RectTransform);
 
             Height = 50;
-
+            
             //targetWalkable = Target.GetComponent<EntityWalkable>();
             //if (targetWalkable == null)
             //    targetWalkable = Target.AddComponent<EntityWalkable>();
@@ -394,9 +391,6 @@ namespace Assets.Scripts
             HpDisplay.gameObject.SetActive(true);
             HpDisplay.text = $"HP: {hp} / {maxHp} ({percent * 100f:F1}%)";
             HpSlider.value = (float)hp / (float)maxHp;
-
-            PlayerState.Hp = hp;
-            PlayerState.MaxHp = maxHp;
         }
         
         public void UpdatePlayerSP(int sp, int maxSp)
@@ -408,9 +402,6 @@ namespace Assets.Scripts
             SpDisplay.gameObject.SetActive(true);
             SpDisplay.text = $"SP: {sp} / {maxSp} ({percent * 100f:F1}%)";
             SpSlider.value = (float)sp / (float)maxSp;
-            
-            PlayerState.Sp = sp;
-            PlayerState.MaxSp = maxSp;
         }
 
 
@@ -470,8 +461,7 @@ namespace Assets.Scripts
 
         public void SetSelectedTarget(ServerControllable target, string name, bool isAlly, bool isHard)
         {
-            if(selectedSprite == null)
-                selectedSprite = CreateSelectedCursorObject();
+            selectedSprite = CreateSelectedCursorObject();
             
             var color = "";
             if (!isAlly)
@@ -1004,7 +994,7 @@ namespace Assets.Scripts
             var dest = groundPosition;
 
             //if we can't path to the tile they clicked on, instead get the closest tile that is valid and we'll walk to that instead.
-            if (!hasValidPath && WalkProvider.GetNextWalkableTileForClick(controllable.CellPosition, groundPosition, out dest))
+            if (!hasValidPath && WalkProvider.GetNextWalkableTileForClick(controllable.Position, groundPosition, out dest))
                 hasValidPath = true;
 
             if (hasValidPath)

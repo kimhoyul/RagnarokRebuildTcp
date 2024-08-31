@@ -2,78 +2,14 @@
 // Golden Thiefbug
 //------------------------------------
 
-macro GtbEmptyEvent() {}
-macro GtbPutLowHpTossOnCooldown() {SetEventCooldown("LowHpToss", 1m);}
-
-macro GoldenBugEggToss(%chance, %min, %max, %delay, %castEvent) {
-	if(CheckCast(SummonMonster, %chance))
-	{
-		count = Random(%min, %max);
-		CreateEvent("GtbSummonArray", CurrentPosition, count);
-		@%castEvent();
-		Cast(SummonMonster, 1, count*0.2s, %delay, HideSkillName);
-	}
-}
-
 SkillHandler("GOLDEN_BUG") {
 StateAny: 
     TryCast(CallMinion, 1, 100%, 0.7s, 15s)[MinionCount < 5] -> CallDefaultMinions();
 StateAttacking:
-	var count = 0; //have to define variables at the start or there'll be scope issues
-	if(HpPercent < 50 && IsNamedEventOffCooldown("LowHpToss")) {
-		@GoldenBugEggToss(100%, 4, 8, 7s, GtbPutLowHpTossOnCooldown);
-	}
-	if(HpPercent < 90) {
-		@GoldenBugEggToss(30%, 1, (100-HpPercent)/10, 7s, GtbEmptyEvent);
-	}
-
-	TryCast(Mammonite, 5, 20%, 0, 5s) -> SendEmote(8);
-    TryCast(CallMinion, 1, 10%, 0.7s, 15s)[MinionCount < 15] -> CallDefaultMinions();
-StateChase:
-	TryCast(Heal, 4999, 10%, 0s, 15s)[HpPercent < 30];
+	TryCast(Mammonite, 10, 20%, 0, 5s) -> SendEmote(8);
+    TryCast(CallMinion, 1, 10%, 0.7s, 15s)[MinionCount < 20] -> CallDefaultMinions();
 StateIdle:
-	TryCast(Heal, 9999, 10%, 0s, 10s)[HpPercent < 70];
-}
-
-event GtbSummonArray {
-	local total = Param1;
-	local count = 0;
-	StartTimer();
-OnTimer 200:
-	if(IsOwnerAlive == false) { EndEvent(); return; }
-	count = count + 1;
-	PlaySoundEffect("t_회피"); //throwing sound
-	TossSummonMonster(1, "GTB_EGG", 9, 9); //toss out an egg every 200ms
-	if(count < total)
-		ResetTimer();
-	else
-		EndEvent();
-}
-
-SkillHandler("GTB_EGG") {
-	StateAny:
-	if(TimeAlive > 5s) {
-		TryCast(NoCast, 1, 100%, 0, 0s)[IsMasterAlive == false] -> Die();
-		TryCast(None, 1, 15%, 6s, 0s) -> {
-			if(IsMasterAlive)
-				SummonMonstersUnderMyMaster(Random(1,3), "GTB_SUMMON");
-			Die();
-		}
-	}
-}
-
-SkillHandler("GTB_SUMMON") {
-	StateAny:
-		TryCast(NoCast, 1, 100%, 0, 0s)[IsMasterAlive == false] -> Die();
-	StateIdle:
-		if(TimeAlive > 5s)
-		{
-			TryCast(None, 1, 10%, 0.3s, 0s) -> {
-				HealMyMaster(HpValue); //heal master remaining HP
-				Leave(); //and then vanish
-				return;
-			}
-		}
+	TryCast(Heal, 9999, 100%, 0s, 10s)[HpPercent < 30];
 }
 
 //------------------------------------
@@ -232,17 +168,11 @@ OnTimer 4200: EndEvent();
 }
 
 SkillHandler("ORK_HERO") {
-StateChase:
-    TryCast(CallMinion, 1, 10%, 2s, 30s)[MinionCount < 3] -> CallDefaultMinions();
-	TryCast(ThunderStorm, 10, 20%, 1.1s, 5s);
-	TryCast(GrandThunderstorm, 10, 20%, 2.5s, 8s, EventOnStartCast)[HpPercent < 30] -> CreateEvent("GrandThunderstorm");
 StateAttacking:
     TryCast(CallMinion, 1, 10%, 2s, 30s)[MinionCount < 3] -> CallDefaultMinions();
-	TryCast(TwoHandQuicken, 10, 100%, 0, 10h)[HpPercent < 30];
-	if(HpPercent > 30)
-		TryCast(ThunderStorm, 10, 20%, 2s, 5s);
-	else
-		TryCast(GrandThunderstorm, 10, 50%, 2.5s, 8s, EventOnStartCast) -> CreateEvent("GrandThunderstorm");
+	TryCast(GrandThunderstorm, 10, 50%, 2.5s, 8s, EventOnStartCast)[HpPercent < 30] -> CreateEvent("GrandThunderstorm");
+    TryCast(TwoHandQuicken, 10, 100%, 0, 10h)[HpPercent < 30];
+	TryCast(ThunderStorm, 10, 20%, 2.5s, 5s)[HpPercent >= 30];
 StateIdle:
 	TryCast(CallMinion, 1, 10%, 2s, 30s)[MinionCount < 3] -> CallDefaultMinions();
 	TryCast(Heal, 9999, 100%, 0s, 10s)[HpPercent < 30];
@@ -255,7 +185,7 @@ StateIdle:
 SkillHandler("DOPPELGANGER") {
 StateAny: 
     TryCast(CallMinion, 1, 100%, 0.3s, 30s)[MinionCount < 3 && HpPercent < 30] -> SummonMinions(1, "NIGHTMARE");
-    TryCast(CallMinion, 1, 100%, 0.7s, 30s)[MinionCount < 3] -> SummonMinions(1, "NIGHTMARE");
+    TryCast(CallMinion, 1, 100%, 1.4s, 30s)[MinionCount < 3] -> SummonMinions(1, "NIGHTMARE");
 	TryCast(Heal, 9999, 100%, 0s, 10s)[HpPercent < 30];
 	TryCast(Heal, 9999, 100%, 0s, 10s)[FindAllyBelowHpPercent(60)];
 StateAttacking:
@@ -272,7 +202,7 @@ event NineTailWalkEvent {
 	StartTimer(100);
 	ChangeNpcClass("NINE_TAIL");
 	ShowNpc(""); //reveal this event npc with a blank name
-	StartWalkToRandomTile(6, 150); //5 tiles away, 150 move speed
+	StartWalkToRandomTile(5, 150); //5 tiles away, 150 move speed
 OnTimer 100:
 	if(IsMoving)
 		ResetTimer();
